@@ -7,6 +7,8 @@ bin_PROGRAMS = \
 	test_sensors \
 	test_input \
 	test_camera \
+	test_media \
+	test_recorder \
 	test_gps
 
 if HAS_ANDROID_4_2_0
@@ -139,6 +141,28 @@ test_camera_LDADD = \
 	$(top_builddir)/glesv2/libGLESv2.la \
 	$(top_builddir)/camera/libcamera.la \
 	$(top_builddir)/input/libis.la
+
+test_media_SOURCES = test_media.c
+test_media_CFLAGS = \
+	-I$(top_srcdir)/include
+test_media_LDADD = \
+	$(top_builddir)/common/libhybris-common.la \
+	$(top_builddir)/egl/libEGL.la \
+	$(top_builddir)/glesv2/libGLESv2.la \
+	$(top_builddir)/media/libmedia.la \
+	$(top_builddir)/sf/libsf.la
+
+test_recorder_SOURCES = test_recorder.c
+test_recorder_CFLAGS = \
+	-I$(top_srcdir)/include
+test_recorder_LDADD = \
+	$(top_builddir)/common/libhybris-common.la \
+	$(top_builddir)/egl/libEGL.la \
+	$(top_builddir)/glesv2/libGLESv2.la \
+	$(top_builddir)/media/libmedia.la \
+	$(top_builddir)/camera/libcamera.la \
+	$(top_builddir)/input/libis.la \
+	$(top_builddir)/sf/libsf.la
 
 test_gps_SOURCES = test_gps.c
 test_gps_CFLAGS = -pthread \
