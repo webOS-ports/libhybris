@@ -265,14 +265,20 @@ void HWComposerNativeWindow::lockFrontBuffer(HWComposerNativeWindowBuffer **buff
     TRACE("");
     HWComposerNativeWindowBuffer *buf;
     pthread_mutex_lock(&_mutex);
-    
+
     while (!m_frontBuf)
     {
            pthread_cond_wait(&_cond, &_mutex);
     }
-    
-    assert(m_frontBuf->busy == 2);
-    
+
+    if (m_frontBuf->busy != 2)
+    {
+         *buffer = 0;
+         *acquireFenceFd = -1;
+         pthread_mutex_unlock(&_mutex);
+         return;
+    }
+
     m_frontBuf->busy = 3;
     buf = m_frontBuf;
     *acquireFenceFd = buf->fenceFd;
