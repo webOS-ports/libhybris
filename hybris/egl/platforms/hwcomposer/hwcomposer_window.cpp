@@ -260,7 +260,7 @@ int HWComposerNativeWindow::queueBuffer(BaseNativeWindowBuffer* buffer, int fenc
     return 0;
 }
 
-void HWComposerNativeWindow::lockFrontBuffer(HWComposerNativeWindowBuffer **buffer)
+void HWComposerNativeWindow::lockFrontBuffer(HWComposerNativeWindowBuffer **buffer, int *acquireFenceFd)
 {
     TRACE("");
     HWComposerNativeWindowBuffer *buf;
@@ -275,6 +275,7 @@ void HWComposerNativeWindow::lockFrontBuffer(HWComposerNativeWindowBuffer **buff
     
     m_frontBuf->busy = 3;
     buf = m_frontBuf;
+    *acquireFenceFd = buf->fenceFd;
     pthread_mutex_unlock(&_mutex);
 
    *buffer = buf;
@@ -282,13 +283,14 @@ void HWComposerNativeWindow::lockFrontBuffer(HWComposerNativeWindowBuffer **buff
 
 }
 
-void HWComposerNativeWindow::unlockFrontBuffer(HWComposerNativeWindowBuffer *buffer)
+void HWComposerNativeWindow::unlockFrontBuffer(HWComposerNativeWindowBuffer *buffer, int releaseFenceFd)
 {
     TRACE("");
     pthread_mutex_lock(&_mutex);
     
     assert(buffer == m_frontBuf);
     m_frontBuf->busy = 0; 
+    m_frontBuf->fenceFd = releaseFenceFd;
 
     pthread_cond_signal(&_cond);
     pthread_mutex_unlock(&_mutex);

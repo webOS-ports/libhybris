@@ -238,7 +238,8 @@ int main(int argc, char **argv)
 		eglSwapBuffers ( (EGLDisplay) display, surface );  // get the rendered buffer to the screen
 
 		HWComposerNativeWindowBuffer *front;	
-		win->lockFrontBuffer(&front);	
+		int fenceFd;
+		win->lockFrontBuffer(&front, &fenceFd);	
 
 		mList[0]->hwLayers[1].handle = front->handle;
 		mList[0]->hwLayers[0].handle = NULL;
@@ -256,7 +257,7 @@ int main(int argc, char **argv)
 		
 		assert(mList[0]->hwLayers[0].releaseFenceFd == -1);
 	
-		win->unlockFrontBuffer(front);
+		win->unlockFrontBuffer(front, -1);
 
 		if (oldrelease != -1)
 		{

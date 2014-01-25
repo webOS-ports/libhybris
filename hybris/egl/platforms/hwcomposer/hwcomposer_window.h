@@ -50,8 +50,8 @@ public:
     void setup(gralloc_module_t* gralloc, alloc_device_t* alloc);
 
 
-    void lockFrontBuffer(HWComposerNativeWindowBuffer **buffer);
-    void unlockFrontBuffer(HWComposerNativeWindowBuffer *buffer);
+    void lockFrontBuffer(HWComposerNativeWindowBuffer **buffer, int *acquireFenceFd);
+    void unlockFrontBuffer(HWComposerNativeWindowBuffer *buffer, int releaseFenceFd);
 
 protected:
     // overloads from BaseNativeWindow
