@@ -266,6 +266,11 @@ int FbDevNativeWindow::queueBuffer(BaseNativeWindowBuffer* buffer, int fenceFd)
 
     pthread_mutex_lock(&_mutex);
 
+    if (fenceFd > 0) {
+        sync_wait(fenceFd, -1);
+        close(fenceFd);
+    }
+
     fbnb->busy=0;
     m_frontBuf = fbnb;
 
@@ -314,6 +319,11 @@ int FbDevNativeWindow::cancelBuffer(BaseNativeWindowBuffer* buffer, int fenceFd)
     pthread_mutex_lock(&_mutex);
 
     fbnb->busy=0;
+
+    if (fenceFd > 0) {
+        sync_wait(fenceFd, -1);
+        close(fenceFd);
+    }
 
     m_freeBufs++;
 
