@@ -112,6 +112,7 @@ public:
     void lock();
     void unlock();
     void frame();
+    void resize(unsigned int width, unsigned int height);
     void releaseBuffer(struct wl_buffer *buffer);
     int postBuffer(ANativeWindowBuffer *buffer);
 
@@ -125,7 +126,7 @@ public:
     static void resize_callback(struct wl_egl_window *egl_window, void *);
     static void free_callback(struct wl_egl_window *egl_window, void *);
     struct wl_event_queue *wl_queue;
-
+ 
 protected:
     // overloads from BaseNativeWindow
     virtual int dequeueBuffer(BaseNativeWindowBuffer **buffer, int *fenceFd);
