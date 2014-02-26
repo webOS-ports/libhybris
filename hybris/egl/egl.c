@@ -417,18 +417,10 @@ EGLBoolean eglWaitNative(EGLint engine)
 
 EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 {
-	EGLNativeWindowType win;
 	EGLBoolean ret; 
 	HYBRIS_TRACE_BEGIN("hybris-egl", "eglSwapBuffers", "");
 	EGL_DLSYM(&_eglSwapBuffers, "eglSwapBuffers");
-	if (egl_helper_has_mapping(surface)) {
-		win = egl_helper_get_mapping(surface);
-		ws_prepareSwap(dpy, win);
-		ret = (*_eglSwapBuffers)(dpy, surface);
-		ws_finishSwap(dpy, win);
-	} else {
-		ret = (*_eglSwapBuffers)(dpy, surface);
-	}
+	ret = (*_eglSwapBuffers)(dpy, surface);
 	HYBRIS_TRACE_END("hybris-egl", "eglSwapBuffers", "");
 	return ret;
 }

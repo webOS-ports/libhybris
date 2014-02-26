@@ -109,9 +109,6 @@ public:
     void releaseBuffer(struct wl_buffer *buffer);
     int postBuffer(ANativeWindowBuffer *buffer);
 
-    void prepareSwap();
-    void finishSwap();
-
     static void sync_callback(void *data, struct wl_callback *callback, uint32_t serial);
     static void registry_handle_global(void *data, struct wl_registry *registry, uint32_t name,
                        const char *interface, uint32_t version);
@@ -161,7 +158,6 @@ private:
     pthread_mutex_t mutex;
     pthread_cond_t cond;
     int m_freeBufs;
-    bool m_buffer_committed;
     struct wl_callback *frame_callback;
     static int wayland_roundtrip(WaylandNativeWindow *display);
 };
