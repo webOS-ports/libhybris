@@ -23,9 +23,6 @@ static EGLNativeWindowType android_createDisplaySurface()
 }
 
 
-static void nullws_init_module(struct ws_egl_interface *egl_iface)
-{
-}
 
 static int nullws_IsValidDisplay(EGLNativeDisplayType display)
 {
@@ -63,7 +60,6 @@ const char *nullws_eglQueryString(EGLDisplay dpy, EGLint name, const char *(*rea
 
 
 struct ws_module ws_module_info = {
-	nullws_init_module,
 	nullws_IsValidDisplay,
 	nullws_CreateWindow,
 	nullws_DestroyWindow,

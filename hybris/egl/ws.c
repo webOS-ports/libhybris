@@ -50,7 +50,6 @@ static void _init_ws()
 		}
 		ws = dlsym(wsmod, "ws_module_info");
 		assert(ws != NULL);
-		ws->init_module(&hybris_egl_interface);
 	}
 }
 
