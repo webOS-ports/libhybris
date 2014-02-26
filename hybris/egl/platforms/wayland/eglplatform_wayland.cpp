@@ -135,25 +135,10 @@ extern "C" void waylandws_passthroughImageKHR(EGLContext *ctx, EGLenum *target, 
 	eglplatformcommon_passthroughImageKHR(ctx, target, buffer, attrib_list);
 }
 
-extern "C" const char *waylandws_eglQueryString(EGLDisplay dpy, EGLint name, const char *(*real_eglQueryString)(EGLDisplay dpy, EGLint name))
-{
-	const char *ret = eglplatformcommon_eglQueryString(dpy, name, real_eglQueryString);
-	if (name == EGL_EXTENSIONS)
-	{
-		assert(ret != NULL);
-		static char eglextensionsbuf[512];
-		snprintf(eglextensionsbuf, 510, "%s %s", ret,
-			"EGL_EXT_swap_buffers_with_damage "
-		);
-		ret = eglextensionsbuf;
-	}
-	return ret;
-}
-
-extern "C" void waylandws_prepareSwap(EGLDisplay dpy, EGLNativeWindowType win, EGLint *damage_rects, EGLint damage_n_rects)
+extern "C" void waylandws_prepareSwap(EGLDisplay dpy, EGLNativeWindowType win)
 {
 	WaylandNativeWindow *window = static_cast<WaylandNativeWindow *>((struct ANativeWindow *)win);
-	window->prepareSwap(damage_rects, damage_n_rects);
+	window->prepareSwap();
 }
 
 extern "C" void waylandws_finishSwap(EGLDisplay dpy, EGLNativeWindowType win)
@@ -175,7 +160,7 @@ struct ws_module ws_module_info = {
 	waylandws_DestroyWindow,
 	waylandws_eglGetProcAddress,
 	waylandws_passthroughImageKHR,
-	waylandws_eglQueryString,
+	eglplatformcommon_eglQueryString,
 	waylandws_prepareSwap,
 	waylandws_finishSwap,
 };
