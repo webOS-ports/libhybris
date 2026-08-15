@@ -47,7 +47,7 @@ libglesv2 = $(top_builddir)/glesv2/libGLESv2.la
 endif
 
 test_audio_SOURCES = test_audio.c
-test_audio_CFLAGS = -std=c99\
+test_audio_CFLAGS = -std=gnu99\
 	-I$(top_srcdir)/include \
 	-I$(top_srcdir)/include/android
 test_audio_LDADD = \
