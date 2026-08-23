@@ -27,6 +27,7 @@
  */
 
 #include <android/api-level.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -4169,6 +4170,47 @@ static std::vector<android_namespace_t*> init_default_namespace_no_config(bool i
     } else {
       ld_default_paths.push_back(default_ld_paths[i]);
     }
+  }
+
+  // Add whatever VNDK APEX is mounted.
+  //
+  // A Halium GSI ships no /system/etc/ld.config.txt, so this function -- not
+  // the configured path below -- is what every process ends up with.
+  // kDefaultLdPaths already names two APEXes, com.android.runtime for bionic
+  // and com.android.i18n, but both are fixed directories. The VNDK APEX is
+  // named for the vendor's VNDK version -- com.android.vndk.v30 against an
+  // Android 11 vendor, v33 against a 13 one -- so it cannot be a constant and
+  // has to be looked up.
+  //
+  // Without it a stock Android 11 vendor's libraries do not load: the Pixel
+  // 3a's audio HAL links android.hardware.power-V1-ndk_platform.so, which
+  // exists nowhere but /apex/com.android.vndk.v30/lib64, so it fails with
+  //
+  //     library "android.hardware.power-V1-ndk_platform.so" not found
+  //
+  // and every consumer of that HAL dies with it. Stock Android reaches the
+  // same directory through the "vndk" namespace that ld.config.txt sets up;
+  // with no config there is no such namespace and no link to it.
+  //
+  // Appended after the built-in paths, so /system, /odm and /vendor still win.
+  DIR* apex_dir = opendir("/apex");
+  if (apex_dir != nullptr) {
+    static const char kVndkPrefix[] = "com.android.vndk.v";
+    for (dirent* entry = readdir(apex_dir); entry != nullptr; entry = readdir(apex_dir)) {
+      if (strncmp(entry->d_name, kVndkPrefix, sizeof(kVndkPrefix) - 1) != 0) {
+        continue;
+      }
+      std::string vndk_lib_dir = std::string("/apex/") + entry->d_name +
+#if defined(__LP64__)
+                                 "/lib64";
+#else
+                                 "/lib";
+#endif
+      if (realpath(vndk_lib_dir.c_str(), real_path) != nullptr) {
+        ld_default_paths.push_back(real_path);
+      }
+    }
+    closedir(apex_dir);
   }
 
   g_default_namespace->set_default_library_paths(std::move(ld_default_paths));
