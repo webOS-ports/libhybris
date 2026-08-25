@@ -116,6 +116,7 @@ static const char* const kSystemLibDir        = "/system/lib64";
 static const char* const kOdmLibDir           = "/odm/lib64";
 static const char* const kVendorLibDir        = "/vendor/lib64";
 static const char* const kVendorHwLibDir      = "/vendor/lib64/hw";
+static const char* const kVendorEglLibDir     = "/vendor/lib64/egl";
 static const char* const kAsanSystemLibDir    = "/data/asan/system/lib64";
 static const char* const kAsanOdmLibDir       = "/data/asan/odm/lib64";
 static const char* const kAsanVendorLibDir    = "/data/asan/vendor/lib64";
@@ -125,6 +126,8 @@ static const char* const kI18nApexLibDir      = "/apex/com.android.i18n/lib64";
 static const char* const kSystemLibDir        = "/system/lib";
 static const char* const kOdmLibDir           = "/odm/lib";
 static const char* const kVendorLibDir        = "/vendor/lib";
+static const char* const kVendorHwLibDir      = "/vendor/lib/hw";
+static const char* const kVendorEglLibDir     = "/vendor/lib/egl";
 static const char* const kAsanSystemLibDir    = "/data/asan/system/lib";
 static const char* const kAsanOdmLibDir       = "/data/asan/odm/lib";
 static const char* const kAsanVendorLibDir    = "/data/asan/vendor/lib";
@@ -139,6 +142,7 @@ static const char* const kDefaultLdPaths[] = {
   kOdmLibDir,
   kVendorLibDir,
   kVendorHwLibDir,
+  kVendorEglLibDir,
   kRuntimeApexLibDir,
   kI18nApexLibDir,
   nullptr
