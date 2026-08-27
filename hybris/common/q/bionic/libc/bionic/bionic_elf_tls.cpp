@@ -157,6 +157,15 @@ size_t StaticTlsLayout::round_up_with_overflow_check(size_t value, size_t alignm
   if (value < old_value) overflowed_ = true;
   return value;
 }
+
+void StaticTlsLayout::finish_layout() {
+  // Round the offset up to the alignment.
+  offset_ = round_up_with_overflow_check(offset_, alignment_);
+  if (overflowed_ || offset_ > MAX_SIZE) {
+    async_safe_fatal("error: TLS segments in static TLS overflowed (size %zu, max %zu)",
+                     offset_, MAX_SIZE);
+  }
+}
 #endif
 
 // Copy each TLS module's initialization image into a newly-allocated block of
