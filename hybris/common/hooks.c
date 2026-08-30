@@ -2487,6 +2487,37 @@ static void *_hybris_hook___get_tls_hooks()
     return tls_hooks;
 }
 
+#if WANT_LINKER_Q
+/* Android libraries reference __tls_get_addr on every general-dynamic TLS
+ * access. Our q linker does implement it - bionic_elf_tls.h renames the
+ * accessor to hybris_linker_tls_get_addr so it cannot collide with glibc's -
+ * but nothing routed the Android-side symbol there, so it resolved instead to
+ * the real bionic libc.so the linker loads out of the runtime APEX. That
+ * implementation reaches a bionic TCB through __get_tls(), and under hybris the
+ * thread pointer is glibc's, so the very first dynamic-TLS access segfaults.
+ *
+ * arm64 hides this: it uses TLSDESC and reaches __tls_get_addr only on a
+ * thread's first access to a module. arm32 has no TLSDESC and calls it for
+ * every access, so the crash is immediate - surface-manager, pulseaudio and
+ * nyx-utils all died inside bionic's __tls_get_addr.
+ */
+static void *(*_hybris_linker_tls_get_addr)(void *ti) = NULL;
+
+static void *_hybris_hook___tls_get_addr(void *ti)
+{
+    TRACE_HOOK("ti %p", ti);
+
+    if (_hybris_linker_tls_get_addr == NULL) {
+        /* The linker is loaded before any Android library can run, so this
+         * should be unreachable; returning NULL beats jumping to 0. */
+        LOGD("__tls_get_addr called before the linker exported it");
+        return NULL;
+    }
+
+    return _hybris_linker_tls_get_addr(ti);
+}
+#endif
+
 ssize_t hybris_get_tls_storage_tp_offset()
 {
     void *tp;
@@ -3286,6 +3317,7 @@ static struct _hook hooks_common[] = {
     HOOK_INDIRECT(android_get_exported_namespace),
 #if WANT_LINKER_Q
     HOOK_INDIRECT(__loader_shared_globals),
+    HOOK_INDIRECT(__tls_get_addr),
 #endif
     /* dirent.h */
     HOOK_DIRECT_NO_DEBUG(opendir),
@@ -3765,6 +3797,7 @@ static void __hybris_linker_init()
     _android_get_exported_namespace = dlsym(linker_handle, "android_get_exported_namespace");
 #if WANT_LINKER_Q
     _android_shared_globals = dlsym(linker_handle, "android_shared_globals");
+    _hybris_linker_tls_get_addr = dlsym(linker_handle, "hybris_linker_tls_get_addr");
     void (*_android_set_hybris_tls_data)(ssize_t, size_t) = dlsym(linker_handle, "android_set_hybris_tls_data");
     if (_android_set_hybris_tls_data) {
         _android_set_hybris_tls_data(hybris_get_tls_storage_tp_offset(), sizeof(hybris_tls_storage));
