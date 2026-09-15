@@ -3108,6 +3108,39 @@ static ssize_t _hybris_hook_MEOW_get_tls_meow_offset()
 }
 #endif
 
+/*
+ * Android 12 vendor blobs expect an unmangled SetTaskProfiles(). The Android 16
+ * GSI's libprocessgroup exports only the C++ overloads (_Z15SetTaskProfilesi...),
+ * so MediaTek's hwcomposer cannot resolve it:
+ *
+ *   cannot locate symbol "SetTaskProfiles" referenced by
+ *     "/android/vendor/lib64/hw/hwcomposer.mtk_common.so"
+ *   failed to get hwcomposer service
+ *
+ * HYBRIS_PREFER_VNDK=1 resolves this one symbol - the v31 APEX does export the
+ * unmangled name - but cannot be used for the compositor: the APEX copies then
+ * break libnativewindow and libhwc2_compat_layer, exactly as the linker patch
+ * that introduced that variable warns. Hooking the single symbol leaves the
+ * rest of the namespace alone.
+ *
+ * Reporting success is correct here. SetTaskProfiles assigns a thread to the
+ * Android cgroup task profiles from /etc/task_profiles.json; on a Halium host
+ * those do not exist and the real implementation could not succeed either. It
+ * is advisory scheduling policy, and the caller aborts only because it cannot
+ * distinguish "failed" from "not applicable".
+ */
+static int _hybris_hook_SetTaskProfiles(int tid, const char *profiles[],
+                                        size_t num_profiles, int use_fd_cache)
+{
+    TRACE("SetTaskProfiles(tid=%d, num=%zu) -> true (no-op on Halium)",
+          tid, num_profiles);
+
+    (void) profiles;
+    (void) use_fd_cache;
+
+    return 1;
+}
+
 // old property hooks for pre-android 8 approach
 static struct _hook hooks_properties[] = {
     HOOK_INDIRECT(property_get),
@@ -3431,6 +3464,8 @@ static struct _hook hooks_common[] = {
     HOOK_INDIRECT(__fsetlocking),
     HOOK_INDIRECT(_flushlbf),
     HOOK_INDIRECT(__fpurge),
+    /* A12 vendor blobs; see _hybris_hook_SetTaskProfiles above */
+    HOOK_INDIRECT(SetTaskProfiles),
     /* misc/vendor workaround */
 #ifdef MALI_QUIRKS
     HOOK_INDIRECT(MEOW_get_tls_meow_offset),
