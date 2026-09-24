@@ -1216,17 +1216,66 @@ static const std::string& vndk_apex_lib_dir() {
       return std::string();
     }
 
-    std::string candidate = std::string("/apex/com.android.vndk.v") + version +
 #if defined(__LP64__)
-                            "/lib64";
+    static const char* const kApexLibDirSuffix = "/lib64";
 #else
-                            "/lib";
+    static const char* const kApexLibDirSuffix = "/lib";
 #endif
+    std::string candidate =
+        std::string("/apex/com.android.vndk.v") + version + kApexLibDirSuffix;
     char real_path[PATH_MAX];
-    if (realpath(candidate.c_str(), real_path) == nullptr) {
-      return std::string();
+    if (realpath(candidate.c_str(), real_path) != nullptr) {
+      return std::string(real_path);
     }
-    return std::string(real_path);
+
+    // The sepolicy version and the VNDK version are not always the same number.
+    // An Android 12.1 vendor reports sepolicy 31.0 with ro.vndk.version 32, so
+    // the APEX named after the sepolicy version can be absent while a perfectly
+    // usable one sits next to it.
+    //
+    // Found on the FuriPhone FLX1s (radon, MT6877): sepolicy 31.0, and a GSI
+    // carrying only v32 and v34. vndk_apex_lib_dir() returned empty, and because
+    // the caller is guarded on !vndk_apex_lib_dir().empty() the whole of
+    // HYBRIS_PREFER_VNDK became a no-op - pulseaudio still died on the missing
+    // android::base::Basename that libnvram.so needs, with the flag set and
+    // nothing saying why.
+    //
+    // ro.vndk.version would name it exactly, but the linker cannot read
+    // properties: hybris disables __system_property_get here (see
+    // DISABLED_FOR_HYBRIS_SUPPORT in linker_logger.cpp), and nothing else under
+    // /vendor is both world-readable and states the VNDK version - this device
+    // has no compatibility_matrix.xml and no vendor-ndk entry.
+    //
+    // So use what is on the filesystem: the oldest APEX at least as new as the
+    // sepolicy version. VNDK APEXes are backward compatible for older vendors,
+    // and taking the oldest such keeps a v34 from being preferred over a v32.
+    long want = strtol(version.c_str(), nullptr, 10);
+    if (want > 0) {
+      DIR* apex_dir = opendir("/apex");
+      if (apex_dir != nullptr) {
+        long best = 0;
+        static const char kPrefix[] = "com.android.vndk.v";
+        struct dirent* ent;
+        while ((ent = readdir(apex_dir)) != nullptr) {
+          if (strncmp(ent->d_name, kPrefix, sizeof(kPrefix) - 1) != 0) continue;
+          const char* digits = ent->d_name + sizeof(kPrefix) - 1;
+          if (*digits < '0' || *digits > '9') continue;
+          long have = strtol(digits, nullptr, 10);
+          if (have >= want && (best == 0 || have < best)) best = have;
+        }
+        closedir(apex_dir);
+        if (best != 0 && best != want) {
+          std::string fallback = std::string("/apex/com.android.vndk.v") +
+                                 std::to_string(best) + kApexLibDirSuffix;
+          if (realpath(fallback.c_str(), real_path) != nullptr) {
+            DL_WARN("hybris: no VNDK APEX v%ld (sepolicy says %s), using v%ld",
+                    want, version.c_str(), best);
+            return std::string(real_path);
+          }
+        }
+      }
+    }
+    return std::string();
   }();
 
   return dir;
@@ -1317,6 +1366,19 @@ static int open_library(android_namespace_t* ns,
       break;
     }
   }
+  // Say so when the preference cannot be honoured. This being silent is what
+  // made it cost a day: HYBRIS_PREFER_VNDK was set, generated, bind-mounted and
+  // read, and did nothing, with no way to tell from the device.
+  if (prefer_vndk && vndk_apex_lib_dir().empty()) {
+    static bool warned = false;
+    if (!warned) {
+      warned = true;
+      DL_WARN("hybris: HYBRIS_PREFER_VNDK is set but no VNDK APEX was found - "
+              "vendor libraries will resolve against /system and may fail on "
+              "missing symbols");
+    }
+  }
+
   if (prefer_vndk && !never_vndk && !vndk_apex_lib_dir().empty()) {
     const std::vector<std::string> vndk_paths = { vndk_apex_lib_dir() };
     int vndk_fd = open_library_on_paths(zip_archive_cache, name, file_offset, vndk_paths, realpath);
