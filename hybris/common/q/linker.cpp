@@ -1803,6 +1803,40 @@ static bool find_library_in_linked_namespace(const android_namespace_link_t& nam
   return true;
 }
 
+// The i18n APEX ships its own libicuuc.so and libicui18n.so (ICU 76), under the same sonames as
+// the Android 9 ones a pre-Treble vendor carries in /vendor/lib (ICU 60). The symbols differ by
+// version suffix, so both can live in one process, but find_loaded_library_by_soname() would hand
+// the APEX's libandroidicu.so whichever was loaded first. Report that the library a task asks for
+// has a different copy in the directory of the APEX library that needs it, so the caller loads that
+// copy instead of reusing the one already there. Limited to ICU: the other APEX libraries (libutils,
+// libbinder, ...) must stay shared with the rest of the process.
+static bool apex_has_own_copy(LoadTask* task, ZipArchiveCache* zip_archive_cache,
+                              const soinfo* candidate) {
+  const soinfo* needed_by = task->get_needed_by();
+  if (needed_by == nullptr || strncmp(task->get_name(), "libicu", 6) != 0) {
+    return false;
+  }
+  const std::string needed_by_path = needed_by->get_realpath();
+  if (needed_by_path.compare(0, 6, "/apex/") != 0 ||
+      needed_by_path.find("/com.android.vndk.") != std::string::npos) {
+    return false;
+  }
+  const size_t slash = needed_by_path.rfind('/');
+  if (slash == std::string::npos) {
+    return false;
+  }
+  const std::vector<std::string> own_dir = { needed_by_path.substr(0, slash) };
+  off64_t file_offset;
+  std::string realpath;
+  int fd = open_library_on_paths(zip_archive_cache, task->get_name(), &file_offset, own_dir,
+                                 &realpath);
+  if (fd == -1) {
+    return false;
+  }
+  close(fd);
+  return realpath != candidate->get_realpath();
+}
+
 static bool find_library_internal(android_namespace_t* ns,
                                   LoadTask* task,
                                   ZipArchiveCache* zip_archive_cache,
@@ -1811,7 +1845,8 @@ static bool find_library_internal(android_namespace_t* ns,
                                   bool search_linked_namespaces) {
   soinfo* candidate;
 
-  if (find_loaded_library_by_soname(ns, task->get_name(), search_linked_namespaces, &candidate)) {
+  if (find_loaded_library_by_soname(ns, task->get_name(), search_linked_namespaces, &candidate) &&
+      !apex_has_own_copy(task, zip_archive_cache, candidate)) {
     LD_LOG(kLogDlopen,
            "find_library_internal(ns=%s, task=%s): Already loaded (by soname): %s",
            ns->get_name(), task->get_name(), candidate->get_realpath());
