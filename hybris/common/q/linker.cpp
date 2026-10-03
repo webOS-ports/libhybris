@@ -1388,6 +1388,33 @@ static int open_library(android_namespace_t* ns,
     }
   }
 
+  // A library inside an APEX (other than the VNDK ones, handled above) takes its own dependencies
+  // from the directory it was loaded from first, like $ORIGIN would.
+  //
+  // With a single namespace the search order is the GSI's /system, then /vendor, and a pre-Treble
+  // vendor carries Android 9's libicuuc.so and libicui18n.so there. The i18n APEX's
+  // libandroidicu.so then binds to ICU 60 instead of the ICU 76 it was built for and fails with
+  //
+  //   cannot locate symbol "UCNV_FROM_U_CALLBACK_STOP_76" referenced by
+  //     "/apex/com.android.i18n/lib/libandroidicu.so"
+  //
+  // which takes libdroidmedia.so, and with it droidcamsrc and every gst-droid element, down.
+  if (needed_by != nullptr) {
+    const std::string& needed_by_path = needed_by->get_realpath();
+    if (needed_by_path.compare(0, 6, "/apex/") == 0 &&
+        needed_by_path.find("/com.android.vndk.") == std::string::npos) {
+      const size_t slash = needed_by_path.rfind('/');
+      if (slash != std::string::npos) {
+        const std::vector<std::string> own_dir = { needed_by_path.substr(0, slash) };
+        int own_fd = open_library_on_paths(zip_archive_cache, name, file_offset, own_dir, realpath);
+        if (own_fd != -1) {
+          TRACE("[ opened %s from the directory of %s ]", name, needed_by_path.c_str());
+          return own_fd;
+        }
+      }
+    }
+  }
+
   // Otherwise we try LD_LIBRARY_PATH first, and fall back to the default library path
   TRACE("[ opening %s from namespace %s from %s]", name, ns->get_name(),ns->get_ld_library_paths());
   int fd = open_library_on_paths(zip_archive_cache, name, file_offset, ns->get_ld_library_paths(), realpath);
