@@ -3141,6 +3141,30 @@ static int _hybris_hook_SetTaskProfiles(int tid, const char *profiles[],
     return 1;
 }
 
+/*
+ * Android 9 vendor blobs call set_sched_policy(). On the Android 16 GSI it is no longer
+ * exported: libprocessgroup keeps get_sched_policy() and set_cpuset_policy(), but
+ * set_sched_policy() became a header-only wrapper around SetTaskProfiles(). The vendor
+ * audio HAL of a pre-Treble Halium 9 vendor therefore fails to load in PulseAudio:
+ *
+ *   cannot locate symbol "set_sched_policy" referenced by
+ *     "/android/vendor/lib/hw/audio.primary.msm8974.so"
+ *   Failed to load audio hw module audio.primary : Invalid argument (22)
+ *
+ * Reporting success is correct for the same reason as for SetTaskProfiles above: this
+ * only assigns a thread to an Android cgroup scheduling profile, which does not exist
+ * on a Halium host, and no caller can do anything useful with a failure.
+ */
+static int _hybris_hook_set_sched_policy(int tid, int policy)
+{
+    TRACE("set_sched_policy(tid=%d, policy=%d) -> 0 (no-op on Halium)", tid, policy);
+
+    (void) tid;
+    (void) policy;
+
+    return 0;
+}
+
 // old property hooks for pre-android 8 approach
 static struct _hook hooks_properties[] = {
     HOOK_INDIRECT(property_get),
@@ -3466,6 +3490,8 @@ static struct _hook hooks_common[] = {
     HOOK_INDIRECT(__fpurge),
     /* A12 vendor blobs; see _hybris_hook_SetTaskProfiles above */
     HOOK_INDIRECT(SetTaskProfiles),
+    /* A9 vendor blobs; see _hybris_hook_set_sched_policy above */
+    HOOK_INDIRECT(set_sched_policy),
     /* misc/vendor workaround */
 #ifdef MALI_QUIRKS
     HOOK_INDIRECT(MEOW_get_tls_meow_offset),
