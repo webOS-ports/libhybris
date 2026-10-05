@@ -24,7 +24,9 @@
 
 #include <dlfcn.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <hybris/common/binding.h>
 
@@ -32,6 +34,143 @@
 
 // Android always uses libGLESv2.so for both OpenGL ES 2.0 and OpenGL ES 3.x
 HYBRIS_LIBRARY_INITIALIZE(glesv2, getenv("LIBGLESV2") ? getenv("LIBGLESV2") : "libGLESv2.so");
+
+/*
+ * Qt Multimedia's video shaders (GLSL ES 1.00, from spirv-cross) declare one struct uniform,
+ *
+ *     struct buf { mat4 matrix; mat4 colorMatrix; float opacity; ... };
+ *     uniform buf ubuf;
+ *
+ * in both the vertex and the fragment shader, using different members in each. The Adreno 2xx/3xx
+ * GLES driver of an Android 9 vendor lays that struct out per stage, but numbers the members
+ * once for the program, so the vertex shader reads some other member as its matrix and the
+ * fragment shader reads wrong members too: the quad lands far outside the viewport and a
+ * VideoOutput stays empty (a camera preview shows white). Nothing is reported, the program
+ * links and every GL call succeeds.
+ *
+ * Rewrite such a shader so that every member is a plain uniform, ubuf_<member>, and look
+ * those up under their new names (and under the old ones when there is no new one). Only
+ * that struct, named buf with the variable ubuf, is touched, and only on an Adreno 2xx/3xx or
+ * when the GPU is not yet known (HYBRIS_FLATTEN_UBUF=1 forces it, =0 disables it).
+ */
+static int flatten_ubuf_enabled(void)
+{
+    static int enabled = -1;
+    if (enabled < 0) {
+        const char *force = getenv("HYBRIS_FLATTEN_UBUF");
+        if (force) {
+            enabled = force[0] == '1';
+        } else {
+            const char *renderer = (const char *) glGetString(GL_RENDERER);
+            if (!renderer)
+                return 1;  /* no context to ask: flattening is harmless on any GPU, ask again next time */
+            enabled = strstr(renderer, "Adreno") && (strstr(renderer, " 2") || strstr(renderer, " 3")) ? 1 : 0;
+        }
+    }
+    return enabled;
+}
+
+/* The shader text with the struct flattened, malloc()ed, or NULL when there is nothing to do. */
+static char *flatten_ubuf(const char *src)
+{
+    static const char decl[] = "uniform buf ubuf;";
+    const char *st = strstr(src, "struct buf");
+    const char *un = strstr(src, decl);
+    if (!st || !un)
+        return NULL;
+    const char *open = strchr(st, '{');
+    const char *close = open ? strchr(open, '}') : NULL;
+    if (!close || close > un)
+        return NULL;
+
+    size_t cap = strlen(src) * 2 + 1024;
+    char *out = malloc(cap);
+    if (!out)
+        return NULL;
+    size_t o = 0;
+
+    memcpy(out, src, st - src);
+    o = st - src;
+
+    /* Each "type name;" member of the struct becomes "uniform type ubuf_name;". */
+    const char *p = open + 1;
+    while (p < close) {
+        const char *end = memchr(p, ';', close - p);
+        if (!end)
+            break;
+        char type[32], name[64];
+        if (sscanf(p, " %31s %63[^; \t\n]", type, name) == 2)
+            o += snprintf(out + o, cap - o, "uniform %s ubuf_%s;\n", type, name);
+        p = end + 1;
+    }
+
+    /* What lies between the struct and its uniform declaration, kept as it is. */
+    const char *after = close + 1;
+    if (*after == ';')
+        after++;
+    memcpy(out + o, after, un - after);
+    o += un - after;
+
+    /* The rest of the shader, every "ubuf." turned into "ubuf_". */
+    for (const char *r = un + sizeof(decl) - 1; *r && o + 2 < cap; ) {
+        if (!strncmp(r, "ubuf.", 5)) {
+            memcpy(out + o, "ubuf_", 5);
+            o += 5;
+            r += 5;
+        } else {
+            out[o++] = *r++;
+        }
+    }
+    out[o] = '\0';
+    return out;
+}
+
+void glShaderSource(GLuint shader, GLsizei count, const GLchar *const *string, const GLint *length)
+{
+    static void (*f)(GLuint, GLsizei, const GLchar *const *, const GLint *) FP_ATTRIB = NULL;
+    HYBRIS_DLSYSM(glesv2, &f, "glShaderSource");
+
+    if (count > 0 && flatten_ubuf_enabled()) {
+        size_t total = 0;
+        for (GLsizei i = 0; i < count; i++)
+            total += (length && length[i] >= 0) ? (size_t) length[i] : strlen(string[i]);
+        char *joined = malloc(total + 1);
+        if (joined) {
+            size_t o = 0;
+            for (GLsizei i = 0; i < count; i++) {
+                size_t l = (length && length[i] >= 0) ? (size_t) length[i] : strlen(string[i]);
+                memcpy(joined + o, string[i], l);
+                o += l;
+            }
+            joined[o] = '\0';
+            char *flat = flatten_ubuf(joined);
+            free(joined);
+            if (flat) {
+                const GLchar *one[1] = { flat };
+                f(shader, 1, one, NULL);
+                free(flat);
+                return;
+            }
+        }
+    }
+    f(shader, count, string, length);
+}
+
+GLint glGetUniformLocation(GLuint program, const GLchar *name)
+{
+    static GLint (*f)(GLuint, const GLchar *) FP_ATTRIB = NULL;
+    HYBRIS_DLSYSM(glesv2, &f, "glGetUniformLocation");
+
+    /* Whichever way the shader was built, a flattened member answers to its new name. */
+    if (name && !strncmp(name, "ubuf.", 5)) {
+        char flat[128];
+        snprintf(flat, sizeof(flat), "ubuf_%s", name + 5);
+        GLint location = f(program, flat);
+        if (location >= 0)
+            return location;
+    }
+    return f(program, name);
+}
 
 HYBRIS_IMPLEMENT_VOID_FUNCTION1(glesv2, glActiveTexture, GLenum);
 HYBRIS_IMPLEMENT_VOID_FUNCTION2(glesv2, glAttachShader, GLuint, GLuint);
@@ -109,7 +248,6 @@ HYBRIS_IMPLEMENT_VOID_FUNCTION3(glesv2, glGetTexParameterfv, GLenum, GLenum, GLf
 HYBRIS_IMPLEMENT_VOID_FUNCTION3(glesv2, glGetTexParameteriv, GLenum, GLenum, GLint *);
 HYBRIS_IMPLEMENT_VOID_FUNCTION3(glesv2, glGetUniformfv, GLuint, GLint, GLfloat *);
 HYBRIS_IMPLEMENT_VOID_FUNCTION3(glesv2, glGetUniformiv, GLuint, GLint, GLint *);
-HYBRIS_IMPLEMENT_FUNCTION2(glesv2, GLint, glGetUniformLocation, GLuint, const GLchar *);
 HYBRIS_IMPLEMENT_VOID_FUNCTION3(glesv2, glGetVertexAttribfv, GLuint, GLenum, GLfloat *);
 HYBRIS_IMPLEMENT_VOID_FUNCTION3(glesv2, glGetVertexAttribiv, GLuint, GLenum, GLint *);
 HYBRIS_IMPLEMENT_VOID_FUNCTION3(glesv2, glGetVertexAttribPointerv, GLuint, GLenum, void **);
@@ -131,7 +269,6 @@ HYBRIS_IMPLEMENT_VOID_FUNCTION4(glesv2, glRenderbufferStorage, GLenum, GLenum, G
 HYBRIS_IMPLEMENT_VOID_FUNCTION2(glesv2, glSampleCoverage, GLfloat, GLboolean);
 HYBRIS_IMPLEMENT_VOID_FUNCTION4(glesv2, glScissor, GLint, GLint, GLsizei, GLsizei);
 HYBRIS_IMPLEMENT_VOID_FUNCTION5(glesv2, glShaderBinary, GLsizei, const GLuint *, GLenum, const void *, GLsizei);
-HYBRIS_IMPLEMENT_VOID_FUNCTION4(glesv2, glShaderSource, GLuint, GLsizei, const GLchar *const *, const GLint *);
 HYBRIS_IMPLEMENT_VOID_FUNCTION3(glesv2, glStencilFunc, GLenum, GLint, GLuint);
 HYBRIS_IMPLEMENT_VOID_FUNCTION4(glesv2, glStencilFuncSeparate, GLenum, GLenum, GLint, GLuint);
 HYBRIS_IMPLEMENT_VOID_FUNCTION1(glesv2, glStencilMask, GLuint);
