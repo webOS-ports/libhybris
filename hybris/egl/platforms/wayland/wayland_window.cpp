@@ -268,6 +268,9 @@ int WaylandNativeWindow::queueBuffer(BaseNativeWindowBuffer* buffer, int fenceFd
     HYBRIS_TRACE_END("wayland-platform", "queueBuffer_waiting_for_fence", "-%p", wnb);
 #endif
 
+    /* One more frame is done: give back the memory of buffers retired long enough ago. */
+    reapRetiredBuffers(false);
+
     HYBRIS_TRACE_COUNTER("wayland-platform", "fronted.size", "%i", fronted.size());
     HYBRIS_TRACE_END("wayland-platform", "queueBuffer", "-%p", wnb);
     unlock();

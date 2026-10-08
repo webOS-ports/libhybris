@@ -447,8 +447,31 @@ void WaylandNativeWindow::destroyBuffer(WaylandNativeWindowBuffer* wnb)
     if (wnb->wlbuffer)
         wl_buffer_destroy(wnb->wlbuffer);
     wnb->wlbuffer = NULL;
-    wnb->common.decRef(&wnb->common);
     m_freeBufs--;
+
+    /*
+     * The wl_buffer goes now, but the memory is only given back once two more frames have been
+     * queued (reapRetiredBuffers()). The GL driver may still have work queued that writes into
+     * the buffer, or into allocations it sized after it, when the window resizes: on the HP
+     * TouchPad (Adreno 220) freeing it at once made the GPU fault on writes to unmapped pages
+     * whenever a resize took the buffers away. queueBuffer() waits for each frame's fence, and
+     * the GPU executes in order, so two frames later nothing can refer to the buffer any more.
+     */
+    m_retired.push_back(std::make_pair(wnb, 2));
+}
+
+void WaylandNativeWindow::reapRetiredBuffers(bool all)
+{
+    std::list<std::pair<WaylandNativeWindowBuffer *, int> >::iterator it = m_retired.begin();
+    while (it != m_retired.end()) {
+        if (all || --it->second <= 0) {
+            WaylandNativeWindowBuffer *wnb = it->first;
+            wnb->common.decRef(&wnb->common);
+            it = m_retired.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void WaylandNativeWindow::destroyBuffers()
@@ -462,6 +485,8 @@ void WaylandNativeWindow::destroyBuffers()
     }
     m_bufList.clear();
     m_freeBufs = 0;
+    /* The window is going away: nothing will render into its buffers again. */
+    reapRetiredBuffers(true);
 }
 
 WaylandNativeWindowBuffer *WaylandNativeWindow::addBuffer() {
@@ -492,12 +517,12 @@ int WaylandNativeWindow::setBufferCount(int cnt) {
     lock();
 
     if ((int)m_bufList.size() > cnt) {
-        /* Decreasing buffer count, remove from beginning */
-        std::list<WaylandNativeWindowBuffer*>::iterator it = m_bufList.begin();
-        for (int i = 0; i <= (int)m_bufList.size() - cnt; i++ )
+        /* Decreasing buffer count, remove from beginning. The number is fixed before the loop:
+         * comparing with the list's size as it shrinks removed the wrong number of buffers. */
+        int excess = (int)m_bufList.size() - cnt;
+        for (int i = 0; i < excess; i++)
         {
-            destroyBuffer(*it);
-            ++it;
+            destroyBuffer(m_bufList.front());
             m_bufList.pop_front();
         }
 
