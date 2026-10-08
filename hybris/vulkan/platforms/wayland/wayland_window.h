@@ -90,6 +90,12 @@ private:
 
     std::list<WaylandNativeWindowBuffer *> m_bufList;
     std::list<WaylandNativeWindowBuffer *> fronted;
+    /*
+     * Buffers taken out of the window whose memory is not given back yet, each with the number of
+     * frames still to be queued before it is (see destroyBuffer()).
+     */
+    std::list<std::pair<WaylandNativeWindowBuffer *, int> > m_retired;
+    void reapRetiredBuffers(bool all);
     struct wl_egl_window *m_window;
     struct wl_display *m_display;
     int m_width;
