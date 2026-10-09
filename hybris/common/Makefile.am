@@ -95,6 +95,7 @@ libhybris_common_la_CXXFLAGS = \
 	-std=gnu++11
 
 libhybris_common_la_LDFLAGS = \
+	-Wl,-z,nodelete \
 	-ldl \
 	-lrt \
 	-pthread \
